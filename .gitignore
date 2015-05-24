@@ -1,3 +1,4 @@
-ext/
-build/
+./ext/
+./build/
+./bin/
 

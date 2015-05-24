@@ -1,0 +1,5 @@
+/Users/danrwhitcomb/Documents/15S/CS77/assignment04/build/src/apps/CMakeFiles/04_pathtrace.dir
+/Users/danrwhitcomb/Documents/15S/CS77/assignment04/build/src/common/ext/glfw/CMakeFiles/ALL_BUILD.dir
+/Users/danrwhitcomb/Documents/15S/CS77/assignment04/build/src/common/CMakeFiles/common.dir
+/Users/danrwhitcomb/Documents/15S/CS77/assignment04/build/src/common/ext/glfw/CMakeFiles/ZERO_CHECK.dir
+/Users/danrwhitcomb/Documents/15S/CS77/assignment04/build/src/common/ext/glfw/src/CMakeFiles/glfw.dir
