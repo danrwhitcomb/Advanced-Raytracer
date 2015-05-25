@@ -37,7 +37,6 @@ SOURCE_GROUP("ext\\lodepng" FILES ${ext_lodepng_srcs})
 
 
 
-
 #add_executable(png2lrle gfx/png2lrle.cpp)
 #target_link_libraries(png2lrle common glfw ${OPENGLLIBS})
 #SOURCE_GROUP("" FILES gfx/png2lrle.cpp)
