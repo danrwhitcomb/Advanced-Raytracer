@@ -19,9 +19,6 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth);
 // lookup texture value
 vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, bool tile = false, bool bilinear_filter = false) {
     if(not texture) return value;
-
-    tile = true;
-    bilinear_filter = true;
     
     float u, v;
     float u_prime, v_prime;
@@ -50,10 +47,10 @@ vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, bool tile =
     j = floor(v * height);
 
     // Retreive the pixels that we will interpolate with
-    color_1 = texture->at(i, j);
-    color_2 = texture->at(i+1, j);
-    color_3 = texture->at(i, j+1);
-    color_4 = texture->at(i+1, j+1);
+    color_1 = texture->at(i-1, j-1);
+    color_2 = texture->at(i, j-1);
+    color_3 = texture->at(i-1, j);
+    color_4 = texture->at(i, j);
 
     // Compute interpolation factors
     u_prime = width * u - floor(width * u);
@@ -115,9 +112,11 @@ float vector_cosine(vec3f a, vec3f b) { return dot(a, b) / (length(a) * length(b
 
 // compute the color corresponing to a ray by pathtrace
 vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
-    
+
     // get scene intersection
     auto intersection = intersect(scene,ray);
+
+    bool mipmap = intersection.mat->mipmap;
     
     // if not hit, return background (looking up the texture by converting the ray direction to latlong around y)
     if(not intersection.hit) {
@@ -129,11 +128,51 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     auto pos = intersection.pos;
     auto norm = intersection.norm;
     auto v = -ray.d;
+
+    vec3f ke, kd, ks;
+    vec3f kd_1, kd_2, kd_3;
+
+    bool tex_tile = intersection.mat->tex_tile;
+    bool tex_filter = intersection.mat->tex_filter;
     
     // compute material values by looking up textures
-    auto ke = lookup_scaled_texture(intersection.mat->ke, intersection.mat->ke_txt, intersection.texcoord);
-    auto kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord);
-    auto ks = lookup_scaled_texture(intersection.mat->ks, intersection.mat->ks_txt, intersection.texcoord);
+    if (mipmap) {
+
+        // Find how far the intersection was from the camera and limit to [1, 5]
+        float dist_heuristic = dist(intersection.pos, scene->camera->frame.o);
+        dist_heuristic = clamp(dist_heuristic, 1.0, 5.0);
+
+        // Intersection is close: use just the high-res textures
+        if (dist_heuristic == 1) {
+            kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, tex_tile, tex_filter);
+
+        // Blend the high-res and medium-res textures
+        } else if (dist_heuristic < 3) {
+            float blend = (dist_heuristic - 1 ) / 2;
+            kd_1 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, tex_tile, tex_filter);
+            kd_2 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_2, intersection.texcoord, tex_tile, tex_filter);
+            kd = (1 - blend) * kd_1 + blend * kd_2;
+
+        // Blend the medium-res and low-res textures
+        } else if (dist_heuristic < 5) {
+            float blend = (dist_heuristic - 3) / 2;
+            kd_2 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_2, intersection.texcoord, tex_tile, tex_filter);
+            kd_3 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_3, intersection.texcoord, tex_tile, tex_filter);
+            kd = (1 - blend) * kd_2 + blend * kd_3;
+
+        // Intersection is far away: just use the low-res texture
+        } else {
+            kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_3, intersection.texcoord, tex_tile, tex_filter);
+        }
+    }
+
+    // Not using mipmap - use the base kd_txt to calculate diffuse
+    else {
+        kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, tex_tile, tex_filter);
+    }
+
+    ke = lookup_scaled_texture(intersection.mat->ke, intersection.mat->ke_txt, intersection.texcoord, tex_tile, tex_filter);
+    ks = lookup_scaled_texture(intersection.mat->ks, intersection.mat->ks_txt, intersection.texcoord, tex_tile, tex_filter);
     auto n = intersection.mat->n;
     auto mf = intersection.mat->microfacet;
     

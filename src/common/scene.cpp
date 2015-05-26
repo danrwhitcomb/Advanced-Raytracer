@@ -177,9 +177,14 @@ Material* json_parse_material(const jsonvalue& json) {
     json_set_optvalue(json, material->n, "n");
     json_set_optvalue(json, material->bsa, "bsa");
     json_set_optvalue(json, material->bsz, "bsz");
+    json_set_optvalue(json, material->tex_tile, "tex_tile");
+    json_set_optvalue(json, material->tex_filter, "tex_filter");
+    json_set_optvalue(json, material->mipmap, "mipmap");
     json_set_optvalue(json, material->microfacet, "microfacet");
     json_parse_opttexture(json, material->ke_txt, "ke_txt");
     json_parse_opttexture(json, material->kd_txt, "kd_txt");
+    json_parse_opttexture(json, material->kd_txt_2, "kd_txt_2");
+    json_parse_opttexture(json, material->kd_txt_3, "kd_txt_3");
     json_parse_opttexture(json, material->ks_txt, "ks_txt");
     json_parse_opttexture(json, material->norm_txt, "norm_txt");
     return material;
