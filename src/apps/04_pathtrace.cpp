@@ -20,13 +20,57 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth);
 
 
 // lookup texture value
-vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, bool tile = false) {
+vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, bool tile = false, bool bilinear_filter = false) {
     if(not texture) return value;
+
+    tile = true;
+    bilinear_filter = true;
     
-    // for now, simply clamp texture coords
-    auto u = clamp(uv.x, 0.0f, 1.0f);
-    auto v = clamp(uv.y, 0.0f, 1.0f);
-    return value * texture->at(u*(texture->width()-1), v*(texture->height()-1));
+    float u, v;
+    float u_prime, v_prime;
+    int i, j;
+    int width, height;
+    vec3f color_1, color_2, color_3, color_4, filtered_color;
+
+    width = texture->width();
+    height = texture->height();
+
+    if (tile) {
+        // Tile the texture if texcoords exceed [0, 1)
+        u = uv.x - floor(uv.x);
+        v = uv.y - floor(uv.y);
+    } else {
+        // Simple clamp coordinates
+        u = clamp(uv.x, 0.0f, 1.0f);
+        v = clamp(uv.y, 0.0f, 1.0f);
+    }
+
+    // Return the simple value from one pixel if not bilinear filtering
+    if (!bilinear_filter) {return value * texture->at(u*(width-1), v*(height-1));}
+
+    // Bilinear filter
+    i = floor(u * width);
+    j = floor(v * height);
+
+    // Retreive the pixels that we will interpolate with
+    color_1 = texture->at(i, j);
+    color_2 = texture->at(i+1, j);
+    color_3 = texture->at(i, j+1);
+    color_4 = texture->at(i+1, j+1);
+
+    // Compute interpolation factors
+    u_prime = width * u - floor(width * u);
+    v_prime = height * v - floor(height * v);
+
+    // Find the interpolated color vector
+    filtered_color = (
+                (1 - u_prime) * (1 - v_prime) * color_1 +
+                (u_prime) * (1 - v_prime) * color_2 +
+                (1 - u_prime) * (v_prime) * color_3 +
+                u_prime * v_prime * color_4
+    );
+
+    return value * filtered_color;
 }
 
 // compute the brdf
