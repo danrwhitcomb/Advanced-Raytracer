@@ -17,8 +17,13 @@ struct Material {
     float       n  = 10;                // specular exponent
     vec3f       kr = zero3f;            // reflection coefficient
     vec3f       ke = zero3f;            // emission coefficient
+    bool        tex_tile = false;      // tile the texture
+    bool        tex_filter = false;     // use bilinear filtering
+    bool        mipmap = false;         // use mip-map to interpolate texture resolutions
     
     image3f*    kd_txt   = nullptr;     // diffuse texture
+    image3f*    kd_txt_2 = nullptr;     // diffuse second depth for mip-map
+    image3f*    kd_txt_3 = nullptr;     // diffuse third depth for mip-map
     image3f*    ks_txt   = nullptr;     // specular texture
     image3f*    kr_txt   = nullptr;     // reflection texture
     image3f*    norm_txt = nullptr;     // normal texture
