@@ -223,7 +223,7 @@ inline float length(const vec3f& a) { return sqrt(dot(a,a)); }
 inline float lengthSqr(const vec3f& a) { return dot(a,a); }
 // normnalization
 inline vec3f normalize(const vec3f& a) { auto l = length(a); if (l==0) return vec3f(0,0,0); else return a * 1/l; }
-// distance and diatcne squared
+// distance and distance squared
 inline float dist(const vec3f& a, const vec3f& b) { return length(a-b); }
 inline float distSqr(const vec3f& a, const vec3f& b) { return lengthSqr(a-b); }
 // cross product

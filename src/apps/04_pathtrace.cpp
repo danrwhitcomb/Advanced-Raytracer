@@ -4,6 +4,10 @@
 #include "animation.h"
 
 #include <thread>
+
+#define BLUR_SAMPLES 3
+#define BLUR_SIZE 0.1
+
 using std::thread;
 
 // modify the following line to disable/enable parallel execution of the pathtracer
@@ -11,6 +15,7 @@ bool parallel_pathtrace = true;
 
 image3f pathtrace(Scene* scene, bool multithread);
 void pathtrace(Scene* scene, image3f* image, RngImage* rngs, int offset_row, int skip_row, bool verbose);
+vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth);
 
 
 
@@ -40,8 +45,32 @@ vec3f eval_env(vec3f ke, image3f* ke_txt, vec3f dir) {
     return ke; // <- placeholder
 }
 
+
+vec3f compute_blur_reflection(Scene* scene, vec3f kr, ray3f ray, int depth, Rng* rng, float bsz, int bsa){
+    vec3f r_i = zero3f;
+    vec3f u = vec3f(ray.d.y * -1.0, ray.d.x, 0);
+    vec3f v = vec3f(0, -1.0 * ray.d.z, ray.d.y);
+    
+    for(int i=0; i < bsa; i++){
+        vec2f rand = rng->next_vec2f();
+        
+        vec3f n = (ray.d +
+                    (0.5f-rand.x)*bsz*u +
+                    (0.5f-rand.y)*bsz*v);
+        
+        ray3f new_ray;
+        new_ray.d = n / (length(n) * 1.0);
+        new_ray.e = ray.e;
+        
+        r_i += pathtrace_ray(scene, new_ray, rng, depth+1);
+    }
+    
+    return (kr * r_i) / (bsa * 1.0);
+}
+
 // compute the color corresponing to a ray by pathtrace
 vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
+    
     // get scene intersection
     auto intersection = intersect(scene,ray);
     
@@ -91,12 +120,20 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     }
     
     // foreach surface
+    //for(Surface* surface : scene->surfaces){
         // skip if no emission from surface
+        //if(c == zero3f){continue;}
+        
         // todo: pick a point on the surface, grabbing normal, area, and texcoord
+        
         // check if quad
+        //if(surface->isquad){
             // generate a 2d random number
             // compute light position, normal, area
+            
+            
             // set tex coords as random value got before
+        //}
         // else if sphere
             // generate a 2d random number
             // compute light position, normal, area
@@ -110,6 +147,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
         // if shadows are enabled
             // perform a shadow check and accumulate
         // else just accumulate
+    //}
     
     // todo: sample the brdf for environment illumination if the environment is there
     // if scene->background is not zero3f
@@ -129,10 +167,13 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     
     // if the material has reflections
     if(not (intersection.mat->kr == zero3f)) {
-        // create the reflection ray
         auto rr = ray3f(intersection.pos,reflect(ray.d,intersection.norm));
-        // accumulate the reflected light (recursive call) scaled by the material reflection
-        c += intersection.mat->kr * pathtrace_ray(scene,rr,rng,depth+1);
+        
+        if(intersection.mat->bsz != 0 && intersection.mat->bsa != 0){
+            c += compute_blur_reflection(scene, intersection.mat->kr, rr, depth, rng, intersection.mat->bsz, intersection.mat->bsa);
+        } else {
+            c += pathtrace_ray(scene, rr, rng, depth++);
+        }
     }
     
     // return the accumulated color

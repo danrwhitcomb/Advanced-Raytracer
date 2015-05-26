@@ -18,6 +18,9 @@ struct Material {
     vec3f       kr = zero3f;            // reflection coefficient
     vec3f       ke = zero3f;            // emission coefficient
     
+    float       bsz = 0;                //Blurred reflection size
+    float       bsa = 0;                //Blurred reflection sample
+    
     image3f*    kd_txt   = nullptr;     // diffuse texture
     image3f*    ks_txt   = nullptr;     // specular texture
     image3f*    kr_txt   = nullptr;     // reflection texture

@@ -175,6 +175,8 @@ Material* json_parse_material(const jsonvalue& json) {
     json_set_optvalue(json, material->kr, "kr");
     json_set_optvalue(json, material->ke, "ke");
     json_set_optvalue(json, material->n, "n");
+    json_set_optvalue(json, material->bsa, "bsa");
+    json_set_optvalue(json, material->bsz, "bsz");
     json_set_optvalue(json, material->microfacet, "microfacet");
     json_parse_opttexture(json, material->ke_txt, "ke_txt");
     json_parse_opttexture(json, material->kd_txt, "kd_txt");
