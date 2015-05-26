@@ -5,9 +5,6 @@
 
 #include <thread>
 
-#define BLUR_SAMPLES 3
-#define BLUR_SIZE 0.1
-
 using std::thread;
 
 // modify the following line to disable/enable parallel execution of the pathtracer
@@ -112,6 +109,10 @@ vec3f compute_blur_reflection(Scene* scene, vec3f kr, ray3f ray, int depth, Rng*
     return (kr * r_i) / (bsa * 1.0);
 }
 
+//Get cosine of angle between two vectors
+float vector_cosine(vec3f a, vec3f b) { return dot(a, b) / (length(a) * length(b));}
+
+
 // compute the color corresponing to a ray by pathtrace
 vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     
@@ -122,6 +123,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     if(not intersection.hit) {
         return eval_env(scene->background, scene->background_txt, ray.d);
     }
+    
     
     // setup variables for shorter code
     auto pos = intersection.pos;
@@ -164,34 +166,66 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     }
     
     // foreach surface
-    //for(Surface* surface : scene->surfaces){
+    for(Surface* surface : scene->surfaces){
         // skip if no emission from surface
-        //if(c == zero3f){continue;}
+        if(surface->mat->ke == zero3f){continue;}
         
         // todo: pick a point on the surface, grabbing normal, area, and texcoord
         
+        // generate a 2d random number
+        vec2f rand = rng->next_vec2f();
+        vec3f pos, normal;
+        float area;
+        auto r = surface->radius;
+
         // check if quad
-        //if(surface->isquad){
-            // generate a 2d random number
+        if(surface->isquad){
             // compute light position, normal, area
+            pos.x = ((r + r) * rand.x) - r;
+            pos.y = ((r + r) * rand.y) - r;
+            pos.z = 0;
+            normal = surface->frame.z;
+            area = pow(r+r, 2);
             
-            
-            // set tex coords as random value got before
-        //}
+        }
         // else if sphere
-            // generate a 2d random number
+        else {
             // compute light position, normal, area
-            // set tex coords as random value got before
+            pos = sample_direction_spherical_uniform(rand);
+            auto l = length(pos);
+            pos = pos * (r/l);
+            normal = transform_direction_from_local(surface->frame,pos);
+            area = 4 * pi * pow(r, 2);
+        }
+        
+        pos = transform_point_from_local(surface->frame, pos);
+        
+        // set tex coords as random value got before
+        vec2f texcoord = rand;
         // get light emission from material and texture
+        vec3f ke = lookup_scaled_texture(surface->mat->ke, surface->mat->ke_txt, texcoord);
         // compute light direction
+        vec3f light_dir = normalize(pos - intersection.pos);
         // compute light response (ke * area * cos_of_light / dist^2)
+        vec3f response = ke * area * vector_cosine(normal, -light_dir) / distSqr(intersection.pos, pos);
         // compute the material response (brdf*cos)
+        auto mat = intersection.mat;
+        auto brdfcos = max(dot(intersection.norm, light_dir),0.0f) * eval_brdf(mat->kd, mat->ks, mat->n, v, light_dir, intersection.norm, mf);
         // multiply brdf and light
+        auto shade = brdfcos * response;
+        
         // check for shadows and accumulate if needed
         // if shadows are enabled
+        if(scene->path_shadows) {
             // perform a shadow check and accumulate
-        // else just accumulate
-    //}
+            if(not intersect_shadow(scene,ray3f::make_segment(pos, intersection.pos))){
+                c += shade;
+            }
+        } else {
+            // else just accumulate
+            c += shade;
+        }
+    }
     
     // todo: sample the brdf for environment illumination if the environment is there
     // if scene->background is not zero3f
