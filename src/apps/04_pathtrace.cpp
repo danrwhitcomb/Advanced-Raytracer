@@ -115,12 +115,12 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     // get scene intersection
     auto intersection = intersect(scene,ray);
-
-    bool mipmap = intersection.mat->mipmap;
-    
+    bool mipmap = false;
     // if not hit, return background (looking up the texture by converting the ray direction to latlong around y)
     if(not intersection.hit) {
         return eval_env(scene->background, scene->background_txt, ray.d);
+    } else {
+       mipmap = intersection.mat->mipmap;
     }
     
     
@@ -221,7 +221,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             pos.x = ((r + r) * rand.x) - r;
             pos.y = ((r + r) * rand.y) - r;
             pos.z = 0;
-            normal = surface->frame.z;
+            normal = normalize(surface->frame.z);
             area = pow(r+r, 2);
             
         }
@@ -231,7 +231,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             pos = sample_direction_spherical_uniform(rand);
             auto l = length(pos);
             pos = pos * (r/l);
-            normal = transform_direction_from_local(surface->frame,pos);
+            normal = normalize(transform_direction_from_local(surface->frame,pos));
             area = 4 * pi * pow(r, 2);
         }
         
@@ -244,10 +244,9 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
         // compute light direction
         vec3f light_dir = normalize(pos - intersection.pos);
         // compute light response (ke * area * cos_of_light / dist^2)
-        vec3f response = ke * area * vector_cosine(normal, -light_dir) / distSqr(intersection.pos, pos);
+        vec3f response = ke * area * max(dot(normal, -light_dir),0.0f) / distSqr(intersection.pos, pos);
         // compute the material response (brdf*cos)
-        auto mat = intersection.mat;
-        auto brdfcos = max(dot(intersection.norm, light_dir),0.0f) * eval_brdf(mat->kd, mat->ks, mat->n, v, light_dir, intersection.norm, mf);
+        auto brdfcos = max(dot(norm, light_dir),0.0f) * eval_brdf(kd, ks, n, v, light_dir, norm, mf);
         // multiply brdf and light
         auto shade = brdfcos * response;
         
@@ -266,7 +265,6 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     
     // todo: sample the brdf for environment illumination if the environment is there
     // if scene->background is not zero3f
-    if(scene->background != zero3f){
         // pick direction and pdf;
         
         // compute the material response (brdf*cos)
@@ -275,12 +273,20 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             // if shadows are enabled
                 // perform a shadow check and accumulate
                 // else just accumulate
-    }
+    
     // todo: sample the brdf for indirect illumination
     // if kd and ks are not zero3f and haven't reach max_depth
+    if((intersection.mat->kd != zero3f || intersection.mat->ks != zero3f) && depth < scene->path_max_depth){
         // pick direction and pdf
+        pair<vec3f, float> pair = sample_brdf(kd, ks, n, v, norm, rng->next_vec2f(), rng->next_float());
+        auto dir = normalize(pair.first);
         // compute the material response (brdf*cos)
+        auto brdfcos = max(dot(norm,dir),0.0f) * eval_brdf(kd, ks, n, v, dir, norm, mf);
+        
         // accumulate recersively scaled by brdf*cos/pdf
+        c += (brdfcos/ pair.second) * pathtrace_ray(scene, ray3f(intersection.pos, dir), rng, depth+1);
+        
+    }
     
     // if the material has reflections
     if(not (intersection.mat->kr == zero3f)) {
