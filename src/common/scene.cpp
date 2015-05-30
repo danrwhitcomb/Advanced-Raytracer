@@ -175,14 +175,27 @@ Material* json_parse_material(const jsonvalue& json) {
     json_set_optvalue(json, material->kr, "kr");
     json_set_optvalue(json, material->ke, "ke");
     json_set_optvalue(json, material->n, "n");
+
+    // JSON options for custom texturing
     json_set_optvalue(json, material->tex_tile, "tex_tile");
     json_set_optvalue(json, material->tex_filter, "tex_filter");
-    json_set_optvalue(json, material->mipmap, "mipmap");
+    json_set_optvalue(json, material->tex_mipmap, "tex_mipmap");
+
+    // Hook up the textures of varying resolutions for mipmapping
+    json_parse_opttexture(json, material->mipmap_01, "mipmap_01");
+    json_parse_opttexture(json, material->mipmap_02, "mipmap_02");
+    json_parse_opttexture(json, material->mipmap_03, "mipmap_03");
+    json_parse_opttexture(json, material->mipmap_04, "mipmap_04");
+    json_parse_opttexture(json, material->mipmap_05, "mipmap_05");
+    json_parse_opttexture(json, material->mipmap_06, "mipmap_06");
+    json_parse_opttexture(json, material->mipmap_07, "mipmap_07");
+    json_parse_opttexture(json, material->mipmap_08, "mipmap_08");
+    json_parse_opttexture(json, material->mipmap_09, "mipmap_09");
+    json_parse_opttexture(json, material->mipmap_10, "mipmap_10");
+
     json_set_optvalue(json, material->microfacet, "microfacet");
     json_parse_opttexture(json, material->ke_txt, "ke_txt");
     json_parse_opttexture(json, material->kd_txt, "kd_txt");
-    json_parse_opttexture(json, material->kd_txt_2, "kd_txt_2");
-    json_parse_opttexture(json, material->kd_txt_3, "kd_txt_3");
     json_parse_opttexture(json, material->ks_txt, "ks_txt");
     json_parse_opttexture(json, material->norm_txt, "norm_txt");
     return material;
