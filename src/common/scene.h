@@ -17,21 +17,32 @@ struct Material {
     float       n  = 10;                // specular exponent
     vec3f       kr = zero3f;            // reflection coefficient
     vec3f       ke = zero3f;            // emission coefficient
-    bool        tex_tile = false;      // tile the texture
+
+    bool        tex_tile = false;       // tile the texture
     bool        tex_filter = false;     // use bilinear filtering
-    bool        mipmap = false;         // use mip-map to interpolate texture resolutions
-    
+    bool        tex_mipmap = false;     // use mip-map to interpolate texture resolutions
+
+    // Store the textures of various resolutions for mipmapping
+    image3f*    mipmap_01 = nullptr;
+    image3f*    mipmap_02 = nullptr;
+    image3f*    mipmap_03 = nullptr;
+    image3f*    mipmap_04 = nullptr;
+    image3f*    mipmap_05 = nullptr;
+    image3f*    mipmap_06 = nullptr;
+    image3f*    mipmap_07 = nullptr;
+    image3f*    mipmap_08 = nullptr;
+    image3f*    mipmap_09 = nullptr;
+    image3f*    mipmap_10 = nullptr;
+
     float       bsz = 0;                //Blurred reflection size
     float       bsa = 0;                //Blurred reflection sample
-    
+
     image3f*    kd_txt   = nullptr;     // diffuse texture
-    image3f*    kd_txt_2 = nullptr;     // diffuse second depth for mip-map
-    image3f*    kd_txt_3 = nullptr;     // diffuse third depth for mip-map
     image3f*    ks_txt   = nullptr;     // specular texture
     image3f*    kr_txt   = nullptr;     // reflection texture
     image3f*    norm_txt = nullptr;     // normal texture
     image3f*    ke_txt   = nullptr;     // emission texture
-    
+
     bool        double_sided = false;   // double-sided material
     bool        microfacet   = false;   // use microfacet formulation
 };
@@ -60,7 +71,7 @@ struct MeshSimulation {
     vector<vec3f>           init_vel;  // initial velocity
     vector<float>           mass;      // mass
     vector<bool>            pinned;    // whether a point is pinned
-    
+
     // inter-particle springs
     struct Spring {
         vec2i               ids;       // springs vertex ids
@@ -69,7 +80,7 @@ struct MeshSimulation {
         float               kd;        // springs dynamic constant
     };
     vector<Spring>          springs;   // springs
-    
+
     // simulation compute data
     vector<vec3f>           vel;       // velocity
     vector<vec3f>           force;     // forces
@@ -94,12 +105,12 @@ struct Mesh {
     vector<vec2i>   line;                       // line
     vector<vec4i>   spline;                     // cubic bezier segments
     Material*       mat = new Material();       // material
-    
+
     int  subdivision_catmullclark_level  = 0;       // catmullclark subdiv level
     bool subdivision_catmullclark_smooth = false;   // catmullclark subdiv smooth
     int  subdivision_bezier_level        = 0;       // bezier subdiv level
     bool subdivision_bezier_uniform      = true;    // bezier subdiv: true=uniform, false=de casteljau
-    
+
     FrameAnimation* animation  = nullptr;       // animation data
     MeshSkinning*   skinning   = nullptr;       // skinning data
     MeshSimulation* simulation = nullptr;       // simulation data
@@ -119,7 +130,7 @@ struct Surface {
     Material*   mat = new Material();       // material
 
     FrameAnimation* animation = nullptr;    // animation data
-    
+
     Mesh*       _display_mesh = nullptr;    // display mesh
     int         subdivision_level = 0;
     bool        subdivision_smooth = false;
@@ -161,29 +172,29 @@ struct SceneAnimation {
 // the samples per pixel (image_samples).
 struct Scene {
     Camera*             camera = new Camera();  // camera
-    
+
     int                 image_width = 512;      // image resolution in x
     int                 image_height = 512;     // image resolution in y
     int                 image_samples = 1;      // samples per pixels in each direction
-    
+
     vector<Light*>      lights;                 // lights
-    
+
     vec3f               background = one3f*0.2; // background color
     image3f*            background_txt = nullptr;// background texture
     vec3f               ambient = one3f*0.2;    // ambient illumination
-    
+
     vector<Surface*>    surfaces;               // surfaces
     vector<Mesh*>       meshes;                 // meshes
-    
+
     SceneAnimation*     animation = new SceneAnimation();    // scene animation data
-    
+
     bool                draw_wireframe = false; // whether to use wireframe for interactive drawing
     bool                draw_animated = false;  // whether to draw with animation
     bool                draw_gpu_skinning = false;  // whether skinning is performed on the gpu
     bool                draw_captureimage = false;  // whether to capture the image in the next frame
-    
+
     bool                accelerate_bvh = true;  // use bvh accel structure
-    
+
     int                 path_max_depth = 2;     // maximum path depth
     bool                path_sample_brdf = true;// sample brdf in path tracing
     bool                path_shadows = true;    // whether to compute shadows

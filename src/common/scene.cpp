@@ -36,12 +36,12 @@ void set_view_turntable(Camera* camera, float rotate_phi, float rotate_theta, fl
     auto new_o = new_center + new_z * camera->focus;
     camera->frame = lookat_frame(new_o,new_center,y3f,true);
     camera->focus = dist(new_o,new_center);
-    
+
     // apply dolly
     vec3f c = camera->frame.o - camera->frame.z * camera->focus;
     camera->focus = max(camera->focus+dolly,0.00001f);
     camera->frame.o = c + camera->frame.z * camera->focus;
-    
+
     // apply pan
     camera->frame.o += camera->frame.x * pan_x + camera->frame.y * pan_y;
 }
@@ -175,16 +175,30 @@ Material* json_parse_material(const jsonvalue& json) {
     json_set_optvalue(json, material->kr, "kr");
     json_set_optvalue(json, material->ke, "ke");
     json_set_optvalue(json, material->n, "n");
+
     json_set_optvalue(json, material->bsa, "bsa");
     json_set_optvalue(json, material->bsz, "bsz");
+
+    // JSON options for custom texturing
     json_set_optvalue(json, material->tex_tile, "tex_tile");
     json_set_optvalue(json, material->tex_filter, "tex_filter");
-    json_set_optvalue(json, material->mipmap, "mipmap");
+    json_set_optvalue(json, material->tex_mipmap, "tex_mipmap");
+
+    // Hook up the textures of varying resolutions for mipmapping
+    json_parse_opttexture(json, material->mipmap_01, "mipmap_01");
+    json_parse_opttexture(json, material->mipmap_02, "mipmap_02");
+    json_parse_opttexture(json, material->mipmap_03, "mipmap_03");
+    json_parse_opttexture(json, material->mipmap_04, "mipmap_04");
+    json_parse_opttexture(json, material->mipmap_05, "mipmap_05");
+    json_parse_opttexture(json, material->mipmap_06, "mipmap_06");
+    json_parse_opttexture(json, material->mipmap_07, "mipmap_07");
+    json_parse_opttexture(json, material->mipmap_08, "mipmap_08");
+    json_parse_opttexture(json, material->mipmap_09, "mipmap_09");
+    json_parse_opttexture(json, material->mipmap_10, "mipmap_10");
+
     json_set_optvalue(json, material->microfacet, "microfacet");
     json_parse_opttexture(json, material->ke_txt, "ke_txt");
     json_parse_opttexture(json, material->kd_txt, "kd_txt");
-    json_parse_opttexture(json, material->kd_txt_2, "kd_txt_2");
-    json_parse_opttexture(json, material->kd_txt_3, "kd_txt_3");
     json_parse_opttexture(json, material->ks_txt, "ks_txt");
     json_parse_opttexture(json, material->norm_txt, "norm_txt");
     return material;
@@ -365,15 +379,15 @@ Scene* create_test_scene_sphere() {
     auto camera             = new Camera();
     camera->frame           = frame3f(z3f*2.5,x3f,y3f,z3f);
     camera->focus           = 2.5f;
-    
+
     auto light_point        = new Light();
     light_point->frame      = frame3f(z3f*5,x3f,y3f,z3f);
     light_point->intensity  = one3f*10;
-    
+
     auto surf_sphere        = new Surface();
     surf_sphere->mat        = new Material();
     surf_sphere->mat->n     = 100;
-    
+
     auto scene              = new Scene();
     scene->background       = one3f*0.2;
     scene->ambient          = one3f*0.2;
@@ -383,9 +397,9 @@ Scene* create_test_scene_sphere() {
     scene->camera           = camera;
     scene->surfaces         = { surf_sphere };
     scene->lights           = { light_point };
-    
+
     scene->path_max_depth = 2;
-    
+
     return scene;
 }
 
@@ -394,11 +408,11 @@ Scene* create_test_scene_sphereplane() {
     auto camera            = new Camera();
     camera->frame          = frame3f(z3f*4,x3f,y3f,z3f);
     camera->focus          = 4.0f;
-    
+
     auto light_point       = new Light();
     light_point->frame     = frame3f({6,12,6},x3f,y3f,z3f);
     light_point->intensity = one3f*100;
-    
+
     auto surf_plane        = new Surface();
     surf_plane->frame      = frame3f(-y3f,x3f,-z3f,y3f);
     surf_plane->radius     = 100;
@@ -408,7 +422,7 @@ Scene* create_test_scene_sphereplane() {
     surf_plane->mat->ks    = zero3f;
     surf_plane->mat->n     = 100;
     surf_plane->mat->kr    = one3f*0.25f;
-    
+
     auto surf_sphere       = new Surface();
     surf_sphere->frame     = identity_frame3f;
     surf_sphere->radius    = 1;
@@ -418,7 +432,7 @@ Scene* create_test_scene_sphereplane() {
     surf_sphere->mat->ks   = zero3f;
     surf_sphere->mat->n    = 100;
     surf_sphere->mat->kr   = zero3f;
-    
+
     auto surf_light         = new Surface();
     surf_light->frame       = frame3f({60,120,60},x3f,y3f,z3f);
     surf_light->radius      = 1.0f;
@@ -426,7 +440,7 @@ Scene* create_test_scene_sphereplane() {
     surf_light->mat->kd     = zero3f;
     surf_light->mat->ks     = zero3f;
     surf_light->mat->ke     = vec3f(1,1,1.1)*10000;
-    
+
     auto scene             = new Scene();
     scene->background      = one3f*0.2f; //one3f*0.2;
     scene->ambient         = zero3f; //one3f*0.2;
@@ -437,10 +451,10 @@ Scene* create_test_scene_sphereplane() {
     scene->surfaces        = { surf_plane, surf_sphere, surf_light };
     scene->lights = {};
     //scene->lights          = { light_point };
-    
+
     scene->path_max_depth = 16;
     scene->path_sample_brdf = true;
-    
+
     return scene;
 }
 

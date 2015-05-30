@@ -14,21 +14,50 @@ image3f pathtrace(Scene* scene, bool multithread);
 void pathtrace(Scene* scene, image3f* image, RngImage* rngs, int offset_row, int skip_row, bool verbose);
 vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth);
 
+vector<image3f*> build_mipmap_array(Material* mat) {
+
+    vector<image3f*> mipmaps;
+    mipmaps.push_back(mat->mipmap_01);
+    mipmaps.push_back(mat->mipmap_02);
+    mipmaps.push_back(mat->mipmap_03);
+    mipmaps.push_back(mat->mipmap_04);
+    mipmaps.push_back(mat->mipmap_05);
+    mipmaps.push_back(mat->mipmap_06);
+    mipmaps.push_back(mat->mipmap_07);
+    mipmaps.push_back(mat->mipmap_08);
+    mipmaps.push_back(mat->mipmap_09);
+    mipmaps.push_back(mat->mipmap_10);
+    return mipmaps;
+}
 
 
 // lookup texture value
-vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, bool tile = false, bool bilinear_filter = false) {
-    if(not texture) return value;
-    
+vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, intersection3f intersection, bool diffuse,
+                            float distance = 0.0, bool tile = false, bool bilinear_filter = false, bool mipmap = false) {
+
+    // Declarations
     float u, v;
-    float u_prime, v_prime;
-    int i, j;
+    float distance_heuristic;
+    float u_prime, v_prime, w_prime;
+    int i, j, k;
     int width, height;
-    vec3f color_1, color_2, color_3, color_4, filtered_color;
+    vec3f color_1, color_2, color_3, color_4,
+            color_5, color_6, color_7, color_8;
 
-    width = texture->width();
-    height = texture->height();
+    vec3f filtered_color;
 
+    // If there is no texture, then don't try to texture it!
+    if(not texture) return value;
+
+    // Rescale distance with heuristic and clamp
+    distance_heuristic = (distance - 1) / 5;
+    distance_heuristic = clamp(distance_heuristic, 0.0, 0.8);
+
+    // Determine texture width and height
+    width = texture->width() - 1;
+    height = texture->height() - 1;
+
+    // TILING
     if (tile) {
         // Tile the texture if texcoords exceed [0, 1)
         u = uv.x - floor(uv.x);
@@ -39,32 +68,71 @@ vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, bool tile =
         v = clamp(uv.y, 0.0f, 1.0f);
     }
 
-    // Return the simple value from one pixel if not bilinear filtering
-    if (!bilinear_filter) {return value * texture->at(u*(width-1), v*(height-1));}
+    // Return the simple value from one pixel if not bilinear or trilinear filtering (mipmap)
+    if (!bilinear_filter || !diffuse) {
+        return value * texture->at(u*(width-1), v*(height-1));
+    }
 
-    // Bilinear filter
-    i = floor(u * width);
-    j = floor(v * height);
+    // Arrange the textures into an indexable array
+    vector<image3f*> mipmaps = build_mipmap_array(intersection.mat);
 
-    // Retreive the pixels that we will interpolate with
-    color_1 = texture->at(i-1, j-1);
-    color_2 = texture->at(i, j-1);
-    color_3 = texture->at(i-1, j);
-    color_4 = texture->at(i, j);
+    // Count the number of varied resolution textures (should be 10)
+    int num_tex = mipmaps.size() - 1;
 
     // Compute interpolation factors
     u_prime = width * u - floor(width * u);
     v_prime = height * v - floor(height * v);
+    w_prime = num_tex * distance_heuristic - floor(num_tex * distance_heuristic);
 
-    // Find the interpolated color vector
+    i = floor(u * width);
+    j = floor(v * height);
+    k = floor(distance_heuristic * num_tex); // where distance [0, 1] => k is [0, 10]
+
+    // BILINEAR FILTER
+    if (!mipmap) {
+
+        // Retreive the pixels that we will interpolate with
+        color_1 = texture->at(i-1, j-1);
+        color_2 = texture->at(i, j-1);
+        color_3 = texture->at(i-1, j);
+        color_4 = texture->at(i, j);
+
+        // Find the interpolated color vector
+        filtered_color = (
+                    (1 - u_prime) * (1 - v_prime) * color_1 +
+                    (u_prime) * (1 - v_prime) * color_2 +
+                    (1 - u_prime) * (v_prime) * color_3 +
+                    u_prime * v_prime * color_4
+        );
+        return value * filtered_color;
+    }
+
+    // TRILINEAR FILTERING (mipmap)
+
+    // Look up the color values to interpolate with
+    color_1 = mipmaps[k]->at(i, j);
+    color_2 = mipmaps[k]->at(i+1, j);
+    color_3 = mipmaps[k]->at(i, j+1);
+    color_4 = mipmaps[k+1]->at(i, j);
+    color_5 = mipmaps[k]->at(i+1, j+1);
+    color_6 = mipmaps[k+1]->at(i+1, j);
+    color_7 = mipmaps[k+1]->at(i, j+1);
+    color_8 = mipmaps[k+1]->at(i+1, j+1);
+
+    // find the interpolated color vector
     filtered_color = (
-                (1 - u_prime) * (1 - v_prime) * color_1 +
-                (u_prime) * (1 - v_prime) * color_2 +
-                (1 - u_prime) * (v_prime) * color_3 +
-                u_prime * v_prime * color_4
+                (1-u_prime) *   (1-v_prime) *   (1-w_prime) *   color_1 +
+                u_prime     *   (1-v_prime) *   (1-w_prime) *   color_2 +
+                (1-u_prime) *   v_prime     *   (1-w_prime) *   color_3 +
+                (1-u_prime) *   (1-v_prime) *   w_prime     *   color_4 +
+                u_prime     *   v_prime     *   (1-w_prime) *   color_5 +
+                u_prime     *   (1-v_prime) *   w_prime     *   color_6 +
+                (1-u_prime) *   v_prime     *   w_prime     *   color_7 +
+                u_prime     *   v_prime     *   w_prime     *   color_8
     );
-
     return value * filtered_color;
+
+
 }
 
 // compute the brdf
@@ -84,30 +152,28 @@ vec3f eval_env(vec3f ke, image3f* ke_txt, vec3f dir) {
 }
 
 
+
 vec3f compute_blur_reflection(Scene* scene, vec3f kr, ray3f ray, int depth, Rng* rng, float bsz, int bsa){
     vec3f r_i = zero3f;
     vec3f u = vec3f(ray.d.y * -1.0, ray.d.x, 0);
     vec3f v = vec3f(0, -1.0 * ray.d.z, ray.d.y);
-    
+
     for(int i=0; i < bsa; i++){
         vec2f rand = rng->next_vec2f();
-        
+
         vec3f n = (ray.d +
                     (0.5f-rand.x)*bsz*u +
                     (0.5f-rand.y)*bsz*v);
-        
+
         ray3f new_ray;
         new_ray.d = n / (length(n) * 1.0);
         new_ray.e = ray.e;
-        
+
         r_i += pathtrace_ray(scene, new_ray, rng, depth+1);
     }
-    
+
     return (kr * r_i) / (bsa * 1.0);
 }
-
-//Get cosine of angle between two vectors
-float vector_cosine(vec3f a, vec3f b) { return dot(a, b) / (length(a) * length(b));}
 
 
 // compute the color corresponing to a ray by pathtrace
@@ -115,15 +181,13 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     // get scene intersection
     auto intersection = intersect(scene,ray);
-    bool mipmap = false;
+    bool tex_mipmap = intersection.mat->tex_mipmap;
+
     // if not hit, return background (looking up the texture by converting the ray direction to latlong around y)
     if(not intersection.hit) {
         return eval_env(scene->background, scene->background_txt, ray.d);
-    } else {
-       mipmap = intersection.mat->mipmap;
     }
-    
-    
+
     // setup variables for shorter code
     auto pos = intersection.pos;
     auto norm = intersection.norm;
@@ -134,54 +198,25 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     bool tex_tile = intersection.mat->tex_tile;
     bool tex_filter = intersection.mat->tex_filter;
-    
-    // compute material values by looking up textures
-    if (mipmap) {
 
-        // Find how far the intersection was from the camera and limit to [1, 5]
-        float dist_heuristic = dist(intersection.pos, scene->camera->frame.o);
-        dist_heuristic = clamp(dist_heuristic, 1.0, 5.0);
+    // Find how far the intersection was from the camera
+    float distance = dist(intersection.pos, scene->camera->frame.o);
+    kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, intersection, true, distance, tex_tile, tex_filter, tex_mipmap);
 
-        // Intersection is close: use just the high-res textures
-        if (dist_heuristic == 1) {
-            kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, tex_tile, tex_filter);
 
-        // Blend the high-res and medium-res textures
-        } else if (dist_heuristic < 3) {
-            float blend = (dist_heuristic - 1 ) / 2;
-            kd_1 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, tex_tile, tex_filter);
-            kd_2 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_2, intersection.texcoord, tex_tile, tex_filter);
-            kd = (1 - blend) * kd_1 + blend * kd_2;
+    // Tile and filter ke and ks but don't do trilinear mipmapping
+    ke = lookup_scaled_texture(intersection.mat->ke, intersection.mat->ke_txt, intersection.texcoord, intersection, false, distance, tex_tile, tex_filter, false);
+    ks = lookup_scaled_texture(intersection.mat->ks, intersection.mat->ks_txt, intersection.texcoord, intersection, false, distance, tex_tile, tex_filter, false);
 
-        // Blend the medium-res and low-res textures
-        } else if (dist_heuristic < 5) {
-            float blend = (dist_heuristic - 3) / 2;
-            kd_2 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_2, intersection.texcoord, tex_tile, tex_filter);
-            kd_3 = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_3, intersection.texcoord, tex_tile, tex_filter);
-            kd = (1 - blend) * kd_2 + blend * kd_3;
-
-        // Intersection is far away: just use the low-res texture
-        } else {
-            kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt_3, intersection.texcoord, tex_tile, tex_filter);
-        }
-    }
-
-    // Not using mipmap - use the base kd_txt to calculate diffuse
-    else {
-        kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, tex_tile, tex_filter);
-    }
-
-    ke = lookup_scaled_texture(intersection.mat->ke, intersection.mat->ke_txt, intersection.texcoord, tex_tile, tex_filter);
-    ks = lookup_scaled_texture(intersection.mat->ks, intersection.mat->ks_txt, intersection.texcoord, tex_tile, tex_filter);
     auto n = intersection.mat->n;
     auto mf = intersection.mat->microfacet;
-    
+
     // accumulate color starting with ambient
     auto c = scene->ambient * kd;
-    
+
     // add emission if on the first bounce
     if(depth == 0 and dot(v,norm) > 0) c += ke;
-    
+
     // foreach point light
     for(auto light : scene->lights) {
         // compute light response
@@ -203,7 +238,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             c += shade;
         }
     }
-    
+
     // foreach surface
     for(Surface* surface : scene->surfaces){
         // skip if no emission from surface
@@ -223,7 +258,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             pos.z = 0;
             normal = normalize(surface->frame.z);
             area = pow(r+r, 2);
-            
+
         }
         // else if sphere
         else {
@@ -234,13 +269,13 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             normal = normalize(transform_direction_from_local(surface->frame,pos));
             area = 4 * pi * pow(r, 2);
         }
-        
+
         pos = transform_point_from_local(surface->frame, pos);
-        
+
         // set tex coords as random value got before
         vec2f texcoord = rand;
         // get light emission from material and texture
-        vec3f ke = lookup_scaled_texture(surface->mat->ke, surface->mat->ke_txt, texcoord);
+        vec3f ke = lookup_scaled_texture(surface->mat->ke, surface->mat->ke_txt, texcoord, intersection, false);
         // compute light direction
         vec3f light_dir = normalize(pos - intersection.pos);
         // compute light response (ke * area * cos_of_light / dist^2)
@@ -249,7 +284,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
         auto brdfcos = max(dot(norm, light_dir),0.0f) * eval_brdf(kd, ks, n, v, light_dir, norm, mf);
         // multiply brdf and light
         auto shade = brdfcos * response;
-        
+
         // check for shadows and accumulate if needed
         // if shadows are enabled
         if(scene->path_shadows) {
@@ -270,23 +305,23 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
         auto dir = normalize(pair.first);
         // compute the material response (brdf*cos)
         auto brdfcos = max(dot(norm,dir),0.0f) * eval_brdf(kd, ks, n, v, dir, norm, mf);
-        
+
         // accumulate recersively scaled by brdf*cos/pdf
         c += (brdfcos/ pair.second) * pathtrace_ray(scene, ray3f(intersection.pos, dir), rng, depth+1);
-        
+
     }
-    
+
     // if the material has reflections
     if(not (intersection.mat->kr == zero3f)) {
         auto rr = ray3f(intersection.pos,reflect(ray.d,intersection.norm));
-        
+
         if(intersection.mat->bsz != 0 && intersection.mat->bsa != 0){
             c += compute_blur_reflection(scene, intersection.mat->kr, rr, depth, rng, intersection.mat->bsz, intersection.mat->bsa);
         } else {
             c += pathtrace_ray(scene, rr, rng, depth++);
         }
     }
-    
+
     // return the accumulated color
     return c;
 }
@@ -300,7 +335,7 @@ int main(int argc, char** argv) {
             {  {"scene_filename", "",  "scene filename",   typeid(string), false, jsonvalue("scene.json") },
                {"image_filename", "",  "image filename",   typeid(string), true,  jsonvalue("") } }
         });
-    
+
     auto scene_filename = args.object_element("scene_filename").as_string();
     Scene* scene = nullptr;
     if(scene_filename.length() > 9 and scene_filename.substr(0,9) == "testscene") {
@@ -311,29 +346,29 @@ int main(int argc, char** argv) {
         scene = load_json_scene(scene_filename);
     }
     error_if_not(scene, "scene is nullptr");
-    
+
     auto image_filename = (args.object_element("image_filename").as_string() != "") ?
         args.object_element("image_filename").as_string() :
         scene_filename.substr(0,scene_filename.size()-5)+".png";
-    
+
     if(not args.object_element("resolution").is_null()) {
         scene->image_height = args.object_element("resolution").as_int();
         scene->image_width = scene->camera->width * scene->image_height / scene->camera->height;
     }
-    
+
     // NOTE: acceleration structure does not support animations
     message("reseting animation...\n");
     animate_reset(scene);
-    
+
     message("accelerating...\n");
     accelerate(scene);
-    
+
     message("rendering %s...\n", scene_filename.c_str());
     auto image = pathtrace(scene, parallel_pathtrace);
-    
+
     message("saving %s...\n", image_filename.c_str());
     write_png(image_filename, image, true);
-    
+
     delete scene;
     message("done\n");
 }
@@ -375,14 +410,14 @@ void pathtrace(Scene* scene, image3f* image, RngImage* rngs, int offset_row, int
         }
     }
     if(verbose) message("\r  rendering done        \n");
-    
+
 }
 
 // pathtrace an image with multithreading if necessary
 image3f pathtrace(Scene* scene, bool multithread) {
     // allocate an image of the proper size
     auto image = image3f(scene->image_width, scene->image_height);
-    
+
     // create a random number generator for each pixel
     auto rngs = RngImage(scene->image_width, scene->image_height);
 
@@ -401,7 +436,7 @@ image3f pathtrace(Scene* scene, bool multithread) {
         // pathtrace all rows
         pathtrace(scene, &image, &rngs, 0, 1, true);
     }
-    
+
     // done
     return image;
 }
