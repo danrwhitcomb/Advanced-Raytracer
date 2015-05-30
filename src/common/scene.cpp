@@ -330,7 +330,8 @@ Scene* json_parse_scene(const jsonvalue& json) {
         json_texture_path_pop();
     }
     if(json.object_contains("meshes")) {
-        scene->meshes = json_parse_meshes(json.object_element("meshes"));
+        vector<Mesh*> a = json_parse_meshes(json.object_element("meshes"));
+        scene->meshes.insert(scene->meshes.end(), a.begin(), a.end());
     }
     // lights
     if(json.object_contains("lights")) scene->lights = json_parse_lights(json.object_element("lights"));
