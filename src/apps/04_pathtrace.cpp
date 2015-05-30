@@ -4,6 +4,7 @@
 #include "animation.h"
 
 #include <thread>
+
 using std::thread;
 
 // modify the following line to disable/enable parallel execution of the pathtracer
@@ -11,6 +12,7 @@ bool parallel_pathtrace = true;
 
 image3f pathtrace(Scene* scene, bool multithread);
 void pathtrace(Scene* scene, image3f* image, RngImage* rngs, int offset_row, int skip_row, bool verbose);
+vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth);
 
 vector<image3f*> build_mipmap_array(Material* mat) {
 
@@ -50,7 +52,7 @@ vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, intersectio
     // Rescale distance with heuristic and clamp
     distance_heuristic = (distance - 1) / 5;
     distance_heuristic = clamp(distance_heuristic, 0.0, 0.8);
-    
+
     // Determine texture width and height
     width = texture->width() - 1;
     height = texture->height() - 1;
@@ -149,19 +151,43 @@ vec3f eval_env(vec3f ke, image3f* ke_txt, vec3f dir) {
     return ke; // <- placeholder
 }
 
+
+
+vec3f compute_blur_reflection(Scene* scene, vec3f kr, ray3f ray, int depth, Rng* rng, float bsz, int bsa){
+    vec3f r_i = zero3f;
+    vec3f u = vec3f(ray.d.y * -1.0, ray.d.x, 0);
+    vec3f v = vec3f(0, -1.0 * ray.d.z, ray.d.y);
+
+    for(int i=0; i < bsa; i++){
+        vec2f rand = rng->next_vec2f();
+
+        vec3f n = (ray.d +
+                    (0.5f-rand.x)*bsz*u +
+                    (0.5f-rand.y)*bsz*v);
+
+        ray3f new_ray;
+        new_ray.d = n / (length(n) * 1.0);
+        new_ray.e = ray.e;
+
+        r_i += pathtrace_ray(scene, new_ray, rng, depth+1);
+    }
+
+    return (kr * r_i) / (bsa * 1.0);
+}
+
+
 // compute the color corresponing to a ray by pathtrace
 vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     // get scene intersection
     auto intersection = intersect(scene,ray);
-
     bool tex_mipmap = intersection.mat->tex_mipmap;
-    
+
     // if not hit, return background (looking up the texture by converting the ray direction to latlong around y)
     if(not intersection.hit) {
         return eval_env(scene->background, scene->background_txt, ray.d);
     }
-    
+
     // setup variables for shorter code
     auto pos = intersection.pos;
     auto norm = intersection.norm;
@@ -172,7 +198,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     bool tex_tile = intersection.mat->tex_tile;
     bool tex_filter = intersection.mat->tex_filter;
-    
+
     // Find how far the intersection was from the camera
     float distance = dist(intersection.pos, scene->camera->frame.o);
     kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, intersection, true, distance, tex_tile, tex_filter, tex_mipmap);
@@ -184,13 +210,13 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     auto n = intersection.mat->n;
     auto mf = intersection.mat->microfacet;
-    
+
     // accumulate color starting with ambient
     auto c = scene->ambient * kd;
-    
+
     // add emission if on the first bounce
     if(depth == 0 and dot(v,norm) > 0) c += ke;
-    
+
     // foreach point light
     for(auto light : scene->lights) {
         // compute light response
@@ -212,52 +238,90 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
             c += shade;
         }
     }
-    
+
     // foreach surface
+    for(Surface* surface : scene->surfaces){
         // skip if no emission from surface
+        if(surface->mat->ke == zero3f){continue;}
         // todo: pick a point on the surface, grabbing normal, area, and texcoord
+        // generate a 2d random number
+        vec2f rand = rng->next_vec2f();
+        vec3f pos, normal;
+        float area;
+        auto r = surface->radius;
+
         // check if quad
-            // generate a 2d random number
+        if(surface->isquad){
             // compute light position, normal, area
-            // set tex coords as random value got before
+            pos.x = ((r + r) * rand.x) - r;
+            pos.y = ((r + r) * rand.y) - r;
+            pos.z = 0;
+            normal = normalize(surface->frame.z);
+            area = pow(r+r, 2);
+
+        }
         // else if sphere
-            // generate a 2d random number
+        else {
             // compute light position, normal, area
-            // set tex coords as random value got before
+            pos = sample_direction_spherical_uniform(rand);
+            auto l = length(pos);
+            pos = pos * (r/l);
+            normal = normalize(transform_direction_from_local(surface->frame,pos));
+            area = 4 * pi * pow(r, 2);
+        }
+
+        pos = transform_point_from_local(surface->frame, pos);
+
+        // set tex coords as random value got before
+        vec2f texcoord = rand;
         // get light emission from material and texture
+        vec3f ke = lookup_scaled_texture(surface->mat->ke, surface->mat->ke_txt, texcoord);
         // compute light direction
+        vec3f light_dir = normalize(pos - intersection.pos);
         // compute light response (ke * area * cos_of_light / dist^2)
+        vec3f response = ke * area * max(dot(normal, -light_dir),0.0f) / distSqr(intersection.pos, pos);
         // compute the material response (brdf*cos)
+        auto brdfcos = max(dot(norm, light_dir),0.0f) * eval_brdf(kd, ks, n, v, light_dir, norm, mf);
         // multiply brdf and light
+        auto shade = brdfcos * response;
+
         // check for shadows and accumulate if needed
         // if shadows are enabled
+        if(scene->path_shadows) {
             // perform a shadow check and accumulate
-        // else just accumulate
-    
-    // todo: sample the brdf for environment illumination if the environment is there
-    // if scene->background is not zero3f
+            if(not intersect_shadow(scene,ray3f::make_segment(pos, intersection.pos))){
+                c += shade;
+            }
+        } else {
+            // else just accumulate
+            c += shade;
+        }
+    }
+
+        // if kd and ks are not zero3f and haven't reach max_depth
+    if((intersection.mat->kd != zero3f || intersection.mat->ks != zero3f) && depth < scene->path_max_depth){
         // pick direction and pdf
+        pair<vec3f, float> pair = sample_brdf(kd, ks, n, v, norm, rng->next_vec2f(), rng->next_float());
+        auto dir = normalize(pair.first);
         // compute the material response (brdf*cos)
-        // todo: accumulate response scaled by brdf*cos/pdf
-        // if material response not zero3f
-            // if shadows are enabled
-                // perform a shadow check and accumulate
-                // else just accumulate
-    
-    // todo: sample the brdf for indirect illumination
-    // if kd and ks are not zero3f and haven't reach max_depth
-        // pick direction and pdf
-        // compute the material response (brdf*cos)
+        auto brdfcos = max(dot(norm,dir),0.0f) * eval_brdf(kd, ks, n, v, dir, norm, mf);
+
         // accumulate recersively scaled by brdf*cos/pdf
-    
+        c += (brdfcos/ pair.second) * pathtrace_ray(scene, ray3f(intersection.pos, dir), rng, depth+1);
+
+    }
+
     // if the material has reflections
     if(not (intersection.mat->kr == zero3f)) {
-        // create the reflection ray
         auto rr = ray3f(intersection.pos,reflect(ray.d,intersection.norm));
-        // accumulate the reflected light (recursive call) scaled by the material reflection
-        c += intersection.mat->kr * pathtrace_ray(scene,rr,rng,depth+1);
+
+        if(intersection.mat->bsz != 0 && intersection.mat->bsa != 0){
+            c += compute_blur_reflection(scene, intersection.mat->kr, rr, depth, rng, intersection.mat->bsz, intersection.mat->bsa);
+        } else {
+            c += pathtrace_ray(scene, rr, rng, depth++);
+        }
     }
-    
+
     // return the accumulated color
     return c;
 }
@@ -271,7 +335,7 @@ int main(int argc, char** argv) {
             {  {"scene_filename", "",  "scene filename",   typeid(string), false, jsonvalue("scene.json") },
                {"image_filename", "",  "image filename",   typeid(string), true,  jsonvalue("") } }
         });
-    
+
     auto scene_filename = args.object_element("scene_filename").as_string();
     Scene* scene = nullptr;
     if(scene_filename.length() > 9 and scene_filename.substr(0,9) == "testscene") {
@@ -282,29 +346,29 @@ int main(int argc, char** argv) {
         scene = load_json_scene(scene_filename);
     }
     error_if_not(scene, "scene is nullptr");
-    
+
     auto image_filename = (args.object_element("image_filename").as_string() != "") ?
         args.object_element("image_filename").as_string() :
         scene_filename.substr(0,scene_filename.size()-5)+".png";
-    
+
     if(not args.object_element("resolution").is_null()) {
         scene->image_height = args.object_element("resolution").as_int();
         scene->image_width = scene->camera->width * scene->image_height / scene->camera->height;
     }
-    
+
     // NOTE: acceleration structure does not support animations
     message("reseting animation...\n");
     animate_reset(scene);
-    
+
     message("accelerating...\n");
     accelerate(scene);
-    
+
     message("rendering %s...\n", scene_filename.c_str());
     auto image = pathtrace(scene, parallel_pathtrace);
-    
+
     message("saving %s...\n", image_filename.c_str());
     write_png(image_filename, image, true);
-    
+
     delete scene;
     message("done\n");
 }
@@ -346,14 +410,14 @@ void pathtrace(Scene* scene, image3f* image, RngImage* rngs, int offset_row, int
         }
     }
     if(verbose) message("\r  rendering done        \n");
-    
+
 }
 
 // pathtrace an image with multithreading if necessary
 image3f pathtrace(Scene* scene, bool multithread) {
     // allocate an image of the proper size
     auto image = image3f(scene->image_width, scene->image_height);
-    
+
     // create a random number generator for each pixel
     auto rngs = RngImage(scene->image_width, scene->image_height);
 
@@ -372,7 +436,7 @@ image3f pathtrace(Scene* scene, bool multithread) {
         // pathtrace all rows
         pathtrace(scene, &image, &rngs, 0, 1, true);
     }
-    
+
     // done
     return image;
 }
