@@ -275,7 +275,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
         // set tex coords as random value got before
         vec2f texcoord = rand;
         // get light emission from material and texture
-        vec3f ke = lookup_scaled_texture(surface->mat->ke, surface->mat->ke_txt, texcoord);
+        vec3f ke = lookup_scaled_texture(surface->mat->ke, surface->mat->ke_txt, texcoord, intersection, false);
         // compute light direction
         vec3f light_dir = normalize(pos - intersection.pos);
         // compute light response (ke * area * cos_of_light / dist^2)
