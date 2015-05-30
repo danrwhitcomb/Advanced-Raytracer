@@ -30,11 +30,12 @@ vector<image3f*> build_mipmap_array(Material* mat) {
 
 
 // lookup texture value
-vec3f lookup_scaled_texture(intersection3f intersection, float distance = 0.0,
-                            bool tile = false, bool bilinear_filter = false, bool mipmap = false) {
+vec3f lookup_scaled_texture(vec3f value, image3f* texture, vec2f uv, intersection3f intersection, bool diffuse,
+                            float distance = 0.0, bool tile = false, bool bilinear_filter = false, bool mipmap = false) {
 
     // Declarations
     float u, v;
+    float distance_heuristic;
     float u_prime, v_prime, w_prime;
     int i, j, k;
     int width, height;
@@ -43,23 +44,16 @@ vec3f lookup_scaled_texture(intersection3f intersection, float distance = 0.0,
 
     vec3f filtered_color;
 
-
-    // Look up values from the intersection
-    vec3f value = intersection.mat->kd;
-    image3f* texture = intersection.mat->kd_txt;
-    vec2f uv = intersection.texcoord;
-
     // If there is no texture, then don't try to texture it!
     if(not texture) return value;
 
-    // Rescale distance as a fraction of the distance=10 and clamp.
-    // This way 0->0 and 10->1 so we can use it to index into the mipmap textures.
-
-    distance = clamp(distance, 0.0, 0.8);
+    // Rescale distance with heuristic and clamp
+    distance_heuristic = (distance - 1) / 5;
+    distance_heuristic = clamp(distance_heuristic, 0.0, 0.8);
     
     // Determine texture width and height
-    width = texture->width();
-    height = texture->height();
+    width = texture->width() - 1;
+    height = texture->height() - 1;
 
     // TILING
     if (tile) {
@@ -73,7 +67,7 @@ vec3f lookup_scaled_texture(intersection3f intersection, float distance = 0.0,
     }
 
     // Return the simple value from one pixel if not bilinear or trilinear filtering (mipmap)
-    if (!bilinear_filter) {
+    if (!bilinear_filter || !diffuse) {
         return value * texture->at(u*(width-1), v*(height-1));
     }
 
@@ -86,11 +80,11 @@ vec3f lookup_scaled_texture(intersection3f intersection, float distance = 0.0,
     // Compute interpolation factors
     u_prime = width * u - floor(width * u);
     v_prime = height * v - floor(height * v);
-    w_prime = num_tex * distance - floor(num_tex * distance);
+    w_prime = num_tex * distance_heuristic - floor(num_tex * distance_heuristic);
 
     i = floor(u * width);
     j = floor(v * height);
-    k = floor(distance * num_tex); // where distance [0, 1] => k is [0, 10]
+    k = floor(distance_heuristic * num_tex); // where distance [0, 1] => k is [0, 10]
 
     // BILINEAR FILTER
     if (!mipmap) {
@@ -181,12 +175,12 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     
     // Find how far the intersection was from the camera
     float distance = dist(intersection.pos, scene->camera->frame.o);
-    kd = lookup_scaled_texture(intersection, distance, tex_tile, tex_filter, tex_mipmap);
+    kd = lookup_scaled_texture(intersection.mat->kd, intersection.mat->kd_txt, intersection.texcoord, intersection, true, distance, tex_tile, tex_filter, tex_mipmap);
 
 
     // Tile and filter ke and ks but don't do trilinear mipmapping
-    ke = lookup_scaled_texture(intersection, distance, tex_tile, false, false);
-    ks = lookup_scaled_texture(intersection, distance, tex_tile, false, false);
+    ke = lookup_scaled_texture(intersection.mat->ke, intersection.mat->ke_txt, intersection.texcoord, intersection, false, distance, tex_tile, tex_filter, false);
+    ks = lookup_scaled_texture(intersection.mat->ks, intersection.mat->ks_txt, intersection.texcoord, intersection, false, distance, tex_tile, tex_filter, false);
 
     auto n = intersection.mat->n;
     auto mf = intersection.mat->microfacet;
