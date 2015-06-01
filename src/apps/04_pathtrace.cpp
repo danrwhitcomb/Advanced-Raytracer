@@ -181,11 +181,13 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
 
     // get scene intersection
     auto intersection = intersect(scene,ray);
-    bool tex_mipmap = intersection.mat->tex_mipmap;
-
+    bool tex_mipmap;
+    
     // if not hit, return background (looking up the texture by converting the ray direction to latlong around y)
     if(not intersection.hit) {
         return eval_env(scene->background, scene->background_txt, ray.d);
+    } else {
+        tex_mipmap = intersection.mat->tex_mipmap;
     }
 
     // setup variables for shorter code
@@ -312,7 +314,7 @@ vec3f pathtrace_ray(Scene* scene, ray3f ray, Rng* rng, int depth) {
     }
 
     // if the material has reflections
-    if(not (intersection.mat->kr == zero3f)) {
+    if(not (intersection.mat->kr == zero3f) && depth < scene->path_max_depth) {
         auto rr = ray3f(intersection.pos,reflect(ray.d,intersection.norm));
 
         if(intersection.mat->bsz != 0 && intersection.mat->bsa != 0){
